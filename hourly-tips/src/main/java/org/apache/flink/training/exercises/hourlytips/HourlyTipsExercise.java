@@ -19,6 +19,7 @@
 package org.apache.flink.training.exercises.hourlytips;
 
 import org.apache.flink.api.common.JobExecutionResult;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -27,7 +28,6 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -85,12 +85,11 @@ public class HourlyTipsExercise {
         DataStream<TaxiFare> fares = env.addSource(source);
 
         SingleOutputStreamOperator<Tuple3<Long, Long, Float>> totalDriverTipsPerHourStream = fares
-                .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<TaxiFare>(Time.seconds(0)) {
-                    @Override
-                    public long extractTimestamp(TaxiFare taxiFare) {
-                        return taxiFare.getEventTimeMillis();
-                    }
-                })
+                .assignTimestampsAndWatermarks(
+                        // taxi fares are in order
+                        WatermarkStrategy.<TaxiFare>forMonotonousTimestamps()
+                                .withTimestampAssigner(
+                                        (fare, t) -> fare.getEventTimeMillis()))
                 .keyBy(fare -> fare.driverId)
                 .window(TumblingEventTimeWindows.of(Time.hours(1)))
                 .process(new CalculateMaxTipPerDriver());
