@@ -21,6 +21,8 @@ package org.apache.flink.training.exercises.longrides;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -30,9 +32,9 @@ import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.training.exercises.common.datatypes.TaxiRide;
 import org.apache.flink.training.exercises.common.sources.TaxiRideGenerator;
-import org.apache.flink.training.exercises.common.utils.MissingSolutionException;
 import org.apache.flink.util.Collector;
 
+import java.io.IOException;
 import java.time.Duration;
 
 /**
@@ -47,7 +49,9 @@ public class LongRidesExercise {
     private final SourceFunction<TaxiRide> source;
     private final SinkFunction<Long> sink;
 
-    /** Creates a job using the source and sink provided. */
+    /**
+     * Creates a job using the source and sink provided.
+     */
     public LongRidesExercise(SourceFunction<TaxiRide> source, SinkFunction<Long> sink) {
         this.source = source;
         this.sink = sink;
@@ -98,17 +102,62 @@ public class LongRidesExercise {
     @VisibleForTesting
     public static class AlertFunction extends KeyedProcessFunction<Long, TaxiRide, Long> {
 
+        private static final long RIDE_DURATION_ALERT_TIME_IN_MS = 1000 * 60 * 60 * 2;
+        private ValueState<TaxiRide> startTaxiRide;
+        private ValueState<TaxiRide> endTaxiRide;
+
         @Override
-        public void open(Configuration config) throws Exception {
-            throw new MissingSolutionException();
+        public void open(Configuration config) {
+            startTaxiRide = getRuntimeContext().getState(new ValueStateDescriptor<>("startTaxiRide", TaxiRide.class));
+            endTaxiRide = getRuntimeContext().getState(new ValueStateDescriptor<>("endTaxiRide", TaxiRide.class));
         }
 
         @Override
         public void processElement(TaxiRide ride, Context context, Collector<Long> out)
-                throws Exception {}
+                throws Exception {
+            if (ride.isStart) {
+                TaxiRide taxiRide = endTaxiRide.value();
+                if (taxiRide != null) {
+                    handleRideDuration(ride, taxiRide, context, out);
+                    endTaxiRide.clear();
+                } else {
+                    startTaxiRide.update(ride);
+                    registerTimer(ride.getEventTimeMillis(), context);
+                }
+            } else {
+                TaxiRide taxiRide = startTaxiRide.value();
+                if (taxiRide != null) {
+                    handleRideDuration(taxiRide, ride, context, out);
+                    startTaxiRide.clear();
+                } else {
+                    endTaxiRide.update(ride);
+                }
+            }
+        }
+
+        private void handleRideDuration(TaxiRide startRide, TaxiRide endRide, Context context, Collector<Long> out) {
+            if (startRide != null && endRide != null) {
+                removeTimer(startRide.getEventTimeMillis(), context);
+                if (endRide.getEventTimeMillis() - startRide.getEventTimeMillis() > RIDE_DURATION_ALERT_TIME_IN_MS) {
+                    out.collect(startRide.rideId);
+                }
+            }
+        }
+
+        private void removeTimer(long rideStartTime, Context context) {
+            long timerTime = rideStartTime + RIDE_DURATION_ALERT_TIME_IN_MS;
+            context.timerService().deleteEventTimeTimer(timerTime);
+        }
+
+        private void registerTimer(long rideStartTime, Context context) {
+            long timerTime = rideStartTime + RIDE_DURATION_ALERT_TIME_IN_MS;
+            context.timerService().registerEventTimeTimer(timerTime);
+        }
 
         @Override
-        public void onTimer(long timestamp, OnTimerContext context, Collector<Long> out)
-                throws Exception {}
+        public void onTimer(long timestamp, OnTimerContext context, Collector<Long> out) throws IOException {
+            TaxiRide ride = startTaxiRide.value();
+            out.collect(ride.rideId);
+        }
     }
 }
