@@ -19,15 +19,22 @@
 package org.apache.flink.training.exercises.hourlytips;
 
 import org.apache.flink.api.common.JobExecutionResult;
+import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
+import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.training.exercises.common.datatypes.TaxiFare;
 import org.apache.flink.training.exercises.common.sources.TaxiFareGenerator;
-import org.apache.flink.training.exercises.common.utils.MissingSolutionException;
+import org.apache.flink.util.Collector;
 
 /**
  * The Hourly Tips exercise from the Flink training.
@@ -40,7 +47,9 @@ public class HourlyTipsExercise {
     private final SourceFunction<TaxiFare> source;
     private final SinkFunction<Tuple3<Long, Long, Float>> sink;
 
-    /** Creates a job using the source and sink provided. */
+    /**
+     * Creates a job using the source and sink provided.
+     */
     public HourlyTipsExercise(
             SourceFunction<TaxiFare> source, SinkFunction<Tuple3<Long, Long, Float>> sink) {
 
@@ -75,19 +84,46 @@ public class HourlyTipsExercise {
         // start the data generator
         DataStream<TaxiFare> fares = env.addSource(source);
 
-        // replace this with your solution
-        if (true) {
-            throw new MissingSolutionException();
-        }
+        SingleOutputStreamOperator<Tuple3<Long, Long, Float>> totalDriverTipsPerHourStream = fares
+                .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<TaxiFare>(Time.seconds(0)) {
+                    @Override
+                    public long extractTimestamp(TaxiFare taxiFare) {
+                        return taxiFare.getEventTimeMillis();
+                    }
+                })
+                .keyBy(fare -> fare.driverId)
+                .window(TumblingEventTimeWindows.of(Time.hours(1)))
+                .process(new CalculateMaxTipPerDriver());
 
-        // the results should be sent to the sink that was passed in
-        // (otherwise the tests won't work)
-        // you can end the pipeline with something like this:
-
-        // DataStream<Tuple3<Long, Long, Float>> hourlyMax = ...
-        // hourlyMax.addSink(sink);
-
+        DataStream<Tuple3<Long, Long, Float>> hourlyMax = totalDriverTipsPerHourStream
+                .keyBy(touple -> touple.f0)
+                .window(TumblingEventTimeWindows.of(Time.hours(1)))
+                .reduce(new DriverWithMostTipsReducer());
+        hourlyMax.addSink(sink);
         // execute the pipeline and return the result
         return env.execute("Hourly Tips");
+    }
+
+
+    private static class CalculateMaxTipPerDriver extends ProcessWindowFunction<TaxiFare, Tuple3<Long, Long, Float>, Long, TimeWindow> {
+        @Override
+        public void process(Long key,
+                            ProcessWindowFunction<TaxiFare, Tuple3<Long, Long, Float>, Long, TimeWindow>.Context context,
+                            Iterable<TaxiFare> elements,
+                            Collector<Tuple3<Long, Long, Float>> collector) {
+
+            float totalTips = 0f;
+            for (TaxiFare taxiFare : elements) {
+                totalTips += taxiFare.tip;
+            }
+            collector.collect(Tuple3.of(context.window().getEnd(), key, totalTips));
+        }
+    }
+
+    private static class DriverWithMostTipsReducer implements ReduceFunction<Tuple3<Long, Long, Float>> {
+        @Override
+        public Tuple3<Long, Long, Float> reduce(Tuple3<Long, Long, Float> driver1, Tuple3<Long, Long, Float> driver2) {
+            return driver1.f2 > driver2.f2 ? driver1 : driver2;
+        }
     }
 }
