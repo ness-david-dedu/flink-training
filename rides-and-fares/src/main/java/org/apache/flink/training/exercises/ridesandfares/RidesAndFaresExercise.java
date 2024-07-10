@@ -119,6 +119,7 @@ public class RidesAndFaresExercise {
                 RideAndFare rideAndFareForCollect = rideAndFare.value();
                 rideAndFareForCollect.setRide(ride);
                 out.collect(rideAndFareForCollect);
+                rideAndFare.clear();
             }
         }
 
