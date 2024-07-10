@@ -23,8 +23,8 @@ import java.io.Serializable;
 /** Holds a TaxiRide and a TaxiFare. */
 public class RideAndFare implements Serializable {
 
-    public TaxiRide ride;
-    public TaxiFare fare;
+    private TaxiRide ride;
+    private TaxiFare fare;
 
     /** Default constructor. */
     public RideAndFare() {}
@@ -32,6 +32,22 @@ public class RideAndFare implements Serializable {
     /** Create a RideAndFare from the ride and fare provided. */
     public RideAndFare(TaxiRide ride, TaxiFare fare) {
         this.ride = ride;
+        this.fare = fare;
+    }
+
+    public TaxiRide getRide() {
+        return ride;
+    }
+
+    public void setRide(TaxiRide ride) {
+        this.ride = ride;
+    }
+
+    public TaxiFare getFare() {
+        return fare;
+    }
+
+    public void setFare(TaxiFare fare) {
         this.fare = fare;
     }
 
