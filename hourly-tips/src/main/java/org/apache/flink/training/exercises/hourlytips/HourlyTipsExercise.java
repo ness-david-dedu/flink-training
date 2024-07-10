@@ -95,8 +95,7 @@ public class HourlyTipsExercise {
                 .process(new CalculateMaxTipPerDriver());
 
         DataStream<Tuple3<Long, Long, Float>> hourlyMax = totalDriverTipsPerHourStream
-                .keyBy(touple -> touple.f0)
-                .window(TumblingEventTimeWindows.of(Time.hours(1)))
+                .windowAll(TumblingEventTimeWindows.of(Time.hours(1)))
                 .reduce(new DriverWithMostTipsReducer());
         hourlyMax.addSink(sink);
         // execute the pipeline and return the result

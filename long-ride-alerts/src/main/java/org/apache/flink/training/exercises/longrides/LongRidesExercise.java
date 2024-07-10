@@ -103,8 +103,8 @@ public class LongRidesExercise {
     public static class AlertFunction extends KeyedProcessFunction<Long, TaxiRide, Long> {
 
         private static final long RIDE_DURATION_ALERT_TIME_IN_MS = 1000 * 60 * 60 * 2;
-        private ValueState<TaxiRide> startTaxiRide;
-        private ValueState<TaxiRide> endTaxiRide;
+        private transient ValueState<TaxiRide> startTaxiRide;
+        private transient ValueState<TaxiRide> endTaxiRide;
 
         @Override
         public void open(Configuration config) {
@@ -136,11 +136,9 @@ public class LongRidesExercise {
         }
 
         private void handleRideDuration(TaxiRide startRide, TaxiRide endRide, Context context, Collector<Long> out) {
-            if (startRide != null && endRide != null) {
-                removeTimer(startRide.getEventTimeMillis(), context);
-                if (endRide.getEventTimeMillis() - startRide.getEventTimeMillis() > RIDE_DURATION_ALERT_TIME_IN_MS) {
-                    out.collect(startRide.rideId);
-                }
+            removeTimer(startRide.getEventTimeMillis(), context);
+            if (endRide.getEventTimeMillis() - startRide.getEventTimeMillis() > RIDE_DURATION_ALERT_TIME_IN_MS) {
+                out.collect(startRide.rideId);
             }
         }
 
@@ -158,6 +156,7 @@ public class LongRidesExercise {
         public void onTimer(long timestamp, OnTimerContext context, Collector<Long> out) throws IOException {
             TaxiRide ride = startTaxiRide.value();
             out.collect(ride.rideId);
+            startTaxiRide.clear();
         }
     }
 }

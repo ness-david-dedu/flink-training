@@ -33,7 +33,6 @@ import org.apache.flink.training.exercises.common.datatypes.TaxiFare;
 import org.apache.flink.training.exercises.common.datatypes.TaxiRide;
 import org.apache.flink.training.exercises.common.sources.TaxiFareGenerator;
 import org.apache.flink.training.exercises.common.sources.TaxiRideGenerator;
-import org.apache.flink.training.exercises.common.utils.MissingSolutionException;
 import org.apache.flink.util.Collector;
 
 /**
@@ -103,7 +102,7 @@ public class RidesAndFaresExercise {
     public static class EnrichmentFunction
             extends RichCoFlatMapFunction<TaxiRide, TaxiFare, RideAndFare> {
 
-        private ValueState<RideAndFare> rideAndFare;
+        private transient ValueState<RideAndFare> rideAndFare;
 
         @Override
         public void open(Configuration config) {
@@ -132,6 +131,7 @@ public class RidesAndFaresExercise {
                 RideAndFare rideAndFareForCollect = rideAndFare.value();
                 rideAndFareForCollect.setFare(fare);
                 out.collect(rideAndFareForCollect);
+                rideAndFare.clear();
             }
         }
     }
